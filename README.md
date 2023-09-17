@@ -127,12 +127,10 @@ Every `.tcl` file has a `defn this-filename.tcl YYYY-MM-DD` line at the top, and
 
 The main top-level program is in `rvdebug.cfg`. This is where the main OpenOCD function `jtag_init` (usually contained `openocd/src/jtag/startup.tcl`) is overridden instead to invoke procedure `rvdebug`. After it runs, control is passed to `rvdebug-handler` to interpret the results.
 
-The heart of the program is in `rvdebug.tcl` and is described by the pictorial below.
+The heart of the program is in `rvdebug.tcl` and is described by the model of register "objects" that implements the [RISC-V Debug Specification](https://github.com/riscv/
+riscv-debug-spec) below.
 
 ```
-#  model of register "objects"
-#  that implements the Debug Specification
-#
 #                        +-------+
 #                        |  DTM  |
 #                        +---+---+
@@ -172,11 +170,9 @@ The heart of the program is in `rvdebug.tcl` and is described by the pictorial b
 #                   +-+---+   +-+--+       +-+-+     +-+-+         +-+-+
 #                   | FPR |   | VR |       | A |     | M |         | F |
 #                   +-----+   +----+       +---+     +---+         +---+
-#
-#  2023-06-13  pds   initial cut
 ```
 
-Critical to understanding the RISC-V Debug Specification is to notice that, depending on the ideosyncracies of hardware implementation the potential for a startup race condition exists when performing an `NDMRESET` action. If there is less than 2.5 Seconds (yes, that's 2500 mS) after pulsing `NDMRESET` then the DM (Debug Module) will become stuck in a persistently busy state and become completely unreachable. Full power-cycle is the only way to regain control of the DM.
+Critical to understanding the *RISC-V Debug Specification* is to notice that, depending on the ideosyncracies of hardware implementation the potential for a startup race condition exists when performing an `NDMRESET` action. If there is less than 2.5 Seconds (yes, that's 2500 mS) after pulsing `NDMRESET` then the DM (Debug Module) will become stuck in a persistently busy state and become completely unreachable. Full power-cycle is the only way to regain control of the DM.
 
 * must first enable DM only (dmactive=1 (haltreq=0, ndmreset=0)), then halt hart (haltreq=1 (dmactive=1, ndmreset=0)),
 
@@ -251,3 +247,6 @@ DM::DATA::xfer        0 0 0   ;# data0, 0x0, read
 #
 #---------- demonstration area
 ```
+ A typical RISC-V Debug implementation might look something like the figure below, in case of FE310 SoC (SiFive, Inc).
+ 
+![riscv-soc-debug](https://github.com/psherman42/rvdebug/assets/36460742/234b68eb-46b2-44f0-a5d3-21f750c0c1e1)
