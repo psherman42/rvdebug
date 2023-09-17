@@ -121,14 +121,13 @@ This cure was discovered by JTAG connection success when probing of the TCK line
 
 ## How `rvdebug` works
 
-It's all in Tcl, thus, everying is a string and a little cryptic. For a quick refresher see [Tcl Crash Course](https://openocd.org/doc/html/Tcl-Crash-Course.html) from OpenOCD documentation. Full reference is [](https://www.tcl-lang.org/man/tcl/TclCmd/contents.htm) although not every aspect is  in the minimal implementation of jim-tcl by OpenOCD.
+It's all in Tcl, thus, everying is a string and a little cryptic. For a quick refresher see [Tcl Crash Course](https://openocd.org/doc/html/Tcl-Crash-Course.html) from OpenOCD documentation. Full reference is in the [Tcl Language Documentation](https://www.tcl-lang.org/man/tcl/TclCmd/contents.htm) although not every aspect is included in the minimal implementation of jim-tcl by OpenOCD.
 
-Every `.tcl` file has a `defn this-filename.tcl YYYY-MM-DD` line at the top, and when needed a `.tcl. file might have one or more `incl some-other-filename.tcl` lines. The `defn` and `incl` macros are in `rvdebug.cfg`.
+Every `.tcl` file has a `defn this-filename.tcl YYYY-MM-DD` line at the top, and when needed a `.tcl` file might have one or more `incl some-other-filename.tcl` lines. The `defn` and `incl` macros are in `rvdebug.cfg`.
 
 The main top-level program is in `rvdebug.cfg`. This is where the main OpenOCD function `jtag_init` (usually contained `openocd/src/jtag/startup.tcl`) is overridden instead to invoke procedure `rvdebug`. After it runs, control is passed to `rvdebug-handler` to interpret the results.
 
 The heart of the program is in `rvdebug.tcl`. Critical to understanding the RISC-V Debug Specification is to notice that, depending on the ideosyncracies of hardware implementation the potential for a startup race condition exists when performing an N`DMRESET` action. If there is less than 2.5 Seconds (yes, that's 2500 mS) after pulsing N`DMRESET` then the DM (Debug Module) will become stuck in a persistently busy state and become completely unreachable. Full power-cycle is the only way to regain control of the DM.
-
 
 * must first enable DM only (dmactive=1 (haltreq=0, ndmreset=0)), then halt hart (haltreq=1 (dmactive=1, ndmreset=0)),
 
@@ -140,4 +139,66 @@ The heart of the program is in `rvdebug.tcl`. Critical to understanding the RISC
 
 Any desired user activity can be done in the *DMI-safe access area* block. For example, the discovery of a target by `examine_system` which is described in `rvdebug-util-examine.tcl`. 
 
+```
+#----- DMI-safe access area: read DMI bus ONLY when selected hart is HALTED, or busy op=3 condition results
+#
+echo "entering DMI-safe access area"
+
+# the sifive implementation of the debug spec requires that the core be halted before
+# trying to execute abstract commands. when a debugger wants to halt a single hart it
+# selects it in hartsel and sets haltreq, then waits for allhalted to indicate that
+# the hart is halted before clearing haltreq to 0.
+# https://forums.sifive.com/t/a-problem-about-debug-module/746
+#
+
+# TIP (per Debug Spec, Section B.3):
+# leave dmcontrol.haltreq=1 to catch and re-halt a hart that gets reset while it is already halted
+
+...
+
+echo "leaving DMI-safe access area"
+#
+#----- DMI-safe access area
+```
+
 Examples for various abstract commands with the program and data buffer are shown in the *demonstraton area* of `rvdebug.tcl`.
+
+```
+#---------- demonstration area
+#
+incl rvdebug-dm-abstractcs.tcl  ;# abstract program control and status
+incl rvdebug-dm-progbuf.tcl     ;# abstract program instruction buffer
+incl rvdebug-dm-data.tcl        ;# abstract program data buffer
+incl rvdebug-dm-command.tcl     ;# abstract program command execution
+
+DM::ABSTRACTCS::xfer  0               ;# maxprogbufnum=abstractcs.progbufsize-1, maxdatabufnum=abstractcs.datacount
+DM::PROGBUF::xfer     0 0x5555aaaa 1  ;# progbufnum prognum [mode] (0=read, 1=write, n=0..15, dmi.abstractcs.progbufsize: 0=one-reg, 1=two-regs, ...)
+DM::DATA::xfer        0 0xaaaa5555 0  ;# databufnum databuf [mode] (0=read, 1=write, n=0..11, dmi.abstractcs.datacount: 0=unkn, 1=one-reg, 2=two-regs, ...)
+DM::COMMAND::xfer ...                 ;# control cmdtype ... after write, wait for abstractcs.busy=0
+DM::ABSTRACTCS::xfer  7               ;# wait for busy=0, check cmderr bits (3) ... write 1 to clear them
+
+#                     cmdtype aarsize regno       transfer write aarpostincrement postexec
+DM::ABSTRACTCS::xfer  7        ;# cmderr=0b111 clear status bits
+DM::COMMAND::xfer     0x00    2       0x1001      1        0     0                0    ;# reg, 32-bit, misa, reg/mem, read, no-incr, no-exec
+DM::ABSTRACTCS::xfer  0        ;# cmderr=0 check status
+DM::DATA::xfer        0 0 0    ;# data0, 0x0, read
+
+#                        ccccccccccccsssssfffdddddooooooo    ;# o=opcode, f=func, s=souce-reg, d=dest-reg, c=csr
+#                        |----------||---||-||---||-----|
+DM::PROGBUF::xfer    0 0b00110000000100000010010001110011 1  ;# progbuf0, (csrrs x0, MISA, s0), write
+DM::PROGBUF::xfer    1 0b00000000000100000000000001110011 1  ;# progbuf1, (ebreak), write
+DM::ABSTRACTCS::xfer 7        ;# cmderr=0b111 clear status bits
+DM::COMMAND::xfer    0x00    2       0x0000      0        0     0                1    ;# reg, 32-bit, x, no-reg/mem, x, x, exec
+DM::ABSTRACTCS::xfer 0        ;# cmderr=0 check status
+#
+DM::ABSTRACTCS::xfer 7        ;# cmderr=0b111 clear status bits
+DM::COMMAND::xfer    0x00    2       0x1008      1        0     0                0    ;# reg, 32-bit, s0, reg/mem, read, no-incr, no-exec
+DM::ABSTRACTCS::xfer 0        ;# cmderr=0 check status
+#
+DM::DATA::xfer        0 0 0   ;# data0, 0x0, read
+#DM::DATA::xfer       1 0 0   ;# data1, 0x0, read
+#DM::DATA::xfer       2 0 0   ;# data2, 0x0, read
+#DM::DATA::xfer       3 0 0   ;# data3, 0x0, read
+#
+#---------- demonstration area
+```
