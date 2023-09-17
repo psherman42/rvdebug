@@ -127,7 +127,56 @@ Every `.tcl` file has a `defn this-filename.tcl YYYY-MM-DD` line at the top, and
 
 The main top-level program is in `rvdebug.cfg`. This is where the main OpenOCD function `jtag_init` (usually contained `openocd/src/jtag/startup.tcl`) is overridden instead to invoke procedure `rvdebug`. After it runs, control is passed to `rvdebug-handler` to interpret the results.
 
-The heart of the program is in `rvdebug.tcl`. Critical to understanding the RISC-V Debug Specification is to notice that, depending on the ideosyncracies of hardware implementation the potential for a startup race condition exists when performing an N`DMRESET` action. If there is less than 2.5 Seconds (yes, that's 2500 mS) after pulsing N`DMRESET` then the DM (Debug Module) will become stuck in a persistently busy state and become completely unreachable. Full power-cycle is the only way to regain control of the DM.
+The heart of the program is in `rvdebug.tcl` and is described by the pictorial below.
+
+```
+#  model of register "objects"
+#  that implements the Debug Specification
+#
+#                        +-------+
+#                        |  DTM  |
+#                        +---+---+
+#                            |
+#      +------------+--------+---+------------------------+
+#      |            |            |                        |
+#  +---+----+  +----+---+    +---+---+                 +--+--+
+#  | BYPASS |  | IDCODE |    | DTMCS |                 | DMI |
+#  +--------+  +--+-----+    +-------+                 +--+--+
+#                 |                                       |
+#           +-----+--+          +-------+------+-------+--+----+------+------+----------+--------+
+#           | JEDEC  |          |       |      |       |       |      |      |          |        |
+#           | JEP106 |    +-----+-----+ | +----+-----+ | +-----+----+ | +----+----+  +--+-----+  |
+#           +---+----+    | DMCONTROL | | | DMSTATUS | | | HARTINFO | | | HARTSUM |  | XFER   |--+---+
+#               |         +-----------+ | +----------+ | +----------+ | +---------+  | MANY   | XFER |
+#           +---o----+                  |              |              |              | LITTLE | ONE  |
+#           | JEDEC  |                  |              |              |              +--------+ BIG  |
+#           | JEP106 |            +-----+----+   +-----+------+    +--+---+                  +-------+
+#           | BANKn  |            | ABSTRACT |   | CONFSTRPTR |    | SBCS |
+#           +--------+            +-----+----+   +------------+    +------+
+#                                       |
+#                                    +--+--+
+#                                    | ISA |
+#                                    +--+--+
+#                                       |
+#                                   +---+-------------+
+#                                   |                 |
+#                              +----+-+           +---+---+
+#                              | REGS |           | INSTR |
+#                              +--+---+           +---+---+
+#                                 |                   |
+#                     +------+--+-+---+      +----+---+----+-----+---+
+#                     |      |  |     |      |    |        |     |   |
+#                     | +--+--+ | +--+--+    | +--+--+ | +-+-+ +-+-+ |
+#                     | | CSR | | | GPR |    | | CSR | | | I | | D | |
+#                     | +-----+ | +-----+    | +-----+ | +---+ +---+ |
+#                   +-+---+   +-+--+       +-+-+     +-+-+         +-+-+
+#                   | FPR |   | VR |       | A |     | M |         | F |
+#                   +-----+   +----+       +---+     +---+         +---+
+#
+#  2023-06-13  pds   initial cut
+```
+
+Critical to understanding the RISC-V Debug Specification is to notice that, depending on the ideosyncracies of hardware implementation the potential for a startup race condition exists when performing an `NDMRESET` action. If there is less than 2.5 Seconds (yes, that's 2500 mS) after pulsing `NDMRESET` then the DM (Debug Module) will become stuck in a persistently busy state and become completely unreachable. Full power-cycle is the only way to regain control of the DM.
 
 * must first enable DM only (dmactive=1 (haltreq=0, ndmreset=0)), then halt hart (haltreq=1 (dmactive=1, ndmreset=0)),
 
