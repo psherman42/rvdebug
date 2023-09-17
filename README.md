@@ -1,6 +1,8 @@
 # rvdebug
 Easy to use Tcl/OpenOCD based RISC-V debug tool
 
+Here is the perfect application to make quick tests of hardware connections, identify and examine target device configuration, execute abstract commands and programs outside of the CPU core, and learn about the *RISC-V Debug Specification*.
+
 ### First Things, *first*
 
 Specify your hardware connection in `rvdebug.cfg` [Lines 25-68] for example as follows:
@@ -173,7 +175,7 @@ The heart of the program is in `rvdebug.tcl` and is described by the model of re
                  +-----+   +----+       +---+     +---+         +---+
 ```
 
-Critical to understanding the *RISC-V Debug Specification* is to notice that, depending on the ideosyncracies of hardware implementation the potential for a startup race condition exists when performing an `NDMRESET` action. If there is less than 2.5 Seconds (yes, that's 2500 mS) after pulsing `NDMRESET` then the DM (Debug Module) will become stuck in a persistently busy state and become completely unreachable. Full power-cycle is the only way to regain control of the DM.
+Critical to understanding the *RISC-V Debug Specification* is to notice that, depending on the Idiosyncrasies of hardware implementation the potential for a startup race condition exists when performing an `NDMRESET` action. If there is less than 2.5 Seconds (yes, that's 2500 mS) after pulsing `NDMRESET` then the DM (Debug Module) will become stuck in a persistently busy state and become completely unreachable. Full power-cycle is the only way to regain control of the DM.
 
 * must first enable DM only (dmactive=1 (haltreq=0, ndmreset=0)), then halt hart (haltreq=1 (dmactive=1, ndmreset=0)),
 
