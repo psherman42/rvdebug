@@ -113,7 +113,9 @@ All of these observations are often because the JTAG wires are too long, or beca
 
 ## How To Cure Noisy JTAG Signals
 
-Simple! As close as practical and possible to target, put a 1 Meg Ohm resistor and a 1000 pF capacitor in parallel from **TCK** to ground. Make sure the OpenOCD `adapter speed` setting is less than `4000` KHz.
+Simple! As close as practical and possible to target, put a 1 Meg Ohm resistor (markings: brown-black-yellow) and a 1000 pF capacitor (markings: 102) in parallel from **TCK** to ground. Make sure the OpenOCD `adapter speed` setting is less than `4000` KHz.
+
+![jtag-tck-1meg-1000pf](https://github.com/psherman42/rvdebug/assets/36460742/40f27c58-bf1f-4f92-a243-1fbc88b5b9f1)
 
 Although not necessary, it is a good idea to apply same RC filter above to **TMS** and **TDI** lines. The **TDO** line, however, should see a 30 ~ 50 Ohm resistor in series between the target and the end of the long JTAG cable wire. Notice that there is almost never any need for external signals like **TRST** or **SRST** -- with a properly functioning hardware interface, reset happens naturally within the JTAG protocol and state machine itself.
 
