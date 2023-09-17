@@ -127,8 +127,7 @@ Every `.tcl` file has a `defn this-filename.tcl YYYY-MM-DD` line at the top, and
 
 The main top-level program is in `rvdebug.cfg`. This is where the main OpenOCD function `jtag_init` (usually contained `openocd/src/jtag/startup.tcl`) is overridden instead to invoke procedure `rvdebug`. After it runs, control is passed to `rvdebug-handler` to interpret the results.
 
-The heart of the program is in `rvdebug.tcl` and is described by the model of register "objects" that implements the [RISC-V Debug Specification](https://github.com/riscv/
-riscv-debug-spec) below.
+The heart of the program is in `rvdebug.tcl` and is described by the model of register "objects" that implements the [RISC-V Debug Specification](https://github.com/riscv/riscv-debug-spec) below.
 
 ```
                       +-------+
