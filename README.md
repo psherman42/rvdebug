@@ -7,19 +7,17 @@ Specify your hardware connection in `rvdebug.cfg` [Lines 25-68] for example as f
 
 ```
 adapter driver ftdi
-
 ftdi vid_pid 0x0403 0x6014
-
 ftdi layout_init 0x0b08 0x0b1b  ;# TMS,TCK,TDI lines (out) and (push-pull)
 ```
 
-For best results, use **Zadig** tool and install `libusbK` driver.
+For best results on a Windows system, use **Zadig** tool and install `libusbK` driver.
 
 ### Using `rvdebug`
 
 `openocd -f rvdebug.cfg`
 
-You should see either `---PASS---` or `***FAIL***` and a complete description something like this:
+You should see either `---PASS---` or `***FAIL***` and a complete description of your target something like this:
 
 ```
 testing TAP chain... bypass=01, bypass(0x1F)=00, riscv-rsvd=0000
@@ -111,12 +109,35 @@ Warn : target riscv.cpu.0 examination failed
 Error: Target not examined yet
 ```
 
-All of these observations are often because of JTAG wires too long, or JTAG signals too noisy -- in particular the TCK signal. See below for an easy solution to remedy such signal line noise.
+All of these observations are often because the JTAG wires are too long, or because the JTAG signals are too noisy -- in particular the TCK signal. See below for an easy solution to remedy such signal line noise.
 
 ## How To Cure Noisy JTAG Signals
 
-Simple! As close as practical and possible to target, put 1 Meg Ohm and 1000 pF in parallel from TCK to ground. Make sure the OpenOCD `adapter speed` setting is less than `4000` KHz.
+Simple! As close as practical and possible to target, put a 1 Meg Ohm resistor and a 1000 pF capacitor in parallel from **TCK** to ground. Make sure the OpenOCD `adapter speed` setting is less than `4000` KHz.
 
-For best results, apply same RC filter to TMS and TDI lines, too.
+Although not necessary, it is a good idea to apply same RC filter above to **TMS** and **TDI** lines. The **TDO** line, however, should see a 30 ~ 50 Ohm resistor in series between the target and the end of the long JTAG cable wire. Notice that there is almost never any need for external signals like **TRST** or **SRST** -- with a properly functioning hardware interface, reset happens naturally within the JTAG protocol and state machine itself.
 
-The TDO line should see a 30 ~ 50 Ohm resistor in series with the end of the long JTAG cable wire.
+This cure was discovered by JTAG connection success when probing of the TCK line with an oscilloscope probe accidentally set to **x1** rather than **x10**. Careful examination led to 1 M Ohm and 1000 pF as an optimal filter time constant. Further ideas came from the [discussion of JTAG signals](https://electronics.stackexchange.com/a/174134). The problem root cause is noise and reflection on **TCK** wire due to huge cable capacitance which confuses the JTAG TAP state machine.
+
+## How `rvdebug` works
+
+It's all in Tcl, thus, everying is a string and a little cryptic. For a quick refresher see [Tcl Crash Course](https://openocd.org/doc/html/Tcl-Crash-Course.html) from OpenOCD documentation. Full reference is [](https://www.tcl-lang.org/man/tcl/TclCmd/contents.htm) although not every aspect is  in the minimal implementation of jim-tcl by OpenOCD.
+
+Every `.tcl` file has a `defn this-filename.tcl YYYY-MM-DD` line at the top, and when needed a `.tcl. file might have one or more `incl some-other-filename.tcl` lines. The `defn` and `incl` macros are in `rvdebug.cfg`.
+
+The main top-level program is in `rvdebug.cfg`. This is where the main OpenOCD function `jtag_init` (usually contained `openocd/src/jtag/startup.tcl`) is overridden instead to invoke procedure `rvdebug`. After it runs, control is passed to `rvdebug-handler` to interpret the results.
+
+The heart of the program is in `rvdebug.tcl`. Critical to understanding the RISC-V Debug Specification is to notice that, depending on the ideosyncracies of hardware implementation the potential for a startup race condition exists when performing an N`DMRESET` action. If there is less than 2.5 Seconds (yes, that's 2500 mS) after pulsing N`DMRESET` then the DM (Debug Module) will become stuck in a persistently busy state and become completely unreachable. Full power-cycle is the only way to regain control of the DM.
+
+
+* must first enable DM only (dmactive=1 (haltreq=0, ndmreset=0)), then halt hart (haltreq=1 (dmactive=1, ndmreset=0)),
+
+* lastly reset non-debug system (ndmreset=1->0 (dmactive=1, haltreq=1)), sequentially not simultaneously, and in that order.
+
+* when ndmreset delay is too short, write or read op from any other register than dmcontrol results in persistent DM busy (op=3) state.
+
+* in persistent DM busy state, DM is completely unreachable, thus power-cycle is the only way to regain control of the DM.
+
+Any desired user activity can be done in the *DMI-safe access area* block. For example, the discovery of a target by `examine_system` which is described in `rvdebug-util-examine.tcl`. 
+
+Examples for various abstract commands with the program and data buffer are shown in the *demonstraton area* of `rvdebug.tcl`.
